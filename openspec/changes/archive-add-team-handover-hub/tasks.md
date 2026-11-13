@@ -18,7 +18,7 @@ Handover: HO-20261113-qjjv. Assumptions are recorded in design.md (Risks / Trade
 - [x] 3.1 Run `openspec validate --all` (verify: 0 failed; keep the output for the report).
 - [x] 3.2 Run `python -m unittest discover -s tests` (verify: all pass; record the count; failing or flaky tests are handled and reported per hub `AGENTS.md` §10).
 - [x] 3.3 Review the diff for private data (no owner paths, private team/product names, hub content), then commit locally — no push, tag, release or reinstall (verify: `git log -1 --stat`, `git status` clean).
-- [ ] 3.4 Report with `ho done HO-20261113-qjjv -m "..."`: commit hash, test result (count, pass), `openspec validate --all` output, and the note that this change's own folder stays in `openspec/changes/` until its archive phase (verify: `ho show HO-20261113-qjjv --json` shows `my_state` `done`).
+- [x] 3.4 Report with `ho done HO-20261113-qjjv -m "..."`: commit hash, test result (count, pass), `openspec validate --all` output, and the note that this change's own folder stays in `openspec/changes/` until its archive phase (verify: `ho show HO-20261113-qjjv --json` shows `my_state` `done`).
 
 ## Workflow follow-up
 
