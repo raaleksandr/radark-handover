@@ -209,8 +209,28 @@ stored verbatim) or `--body -` (read stdin). On Windows PowerShell 5.1 prefer
 | `ho close <ID> --force -m <reason>` | sender | cancel an open handover |
 | `ho validate` | anyone | check the hub's integrity; lists every problem with its file |
 | `ho sync` | anyone | `git pull --rebase --autostash`, commit hub changes with a generated message (e.g. `ho: backend respond HO-20261010-bizg`), `git push` |
+| `ho --version [--json]` | anyone | package version and JSON contract version; needs no hub and no team, takes no command |
 
 No other command touches git.
+
+`ho --version` prints one line, and `ho --version --json` one JSON document
+(both exit 0, even without a hub, `HO_HUB` or `HO_TEAM`):
+
+```text
+ho 0.2.0 (contract 1)
+```
+
+```json
+{
+  "schema_version": 1,
+  "version": "0.2.0",
+  "contract": 1
+}
+```
+
+Tools that drive `ho` can run it once at start-up: a missing `ho`, or an older
+one without `--version` (exit 1, no JSON), or an unexpected `contract` means
+stop with one clear message.
 
 ### Inbox
 
@@ -240,6 +260,21 @@ escapes) that always has `schema_version: 1`:
 A handover summary contains `id, title, from, to, expects, status, recipients,
 my_state, priority, due, tags, refs, auto_close, created, last_activity,
 archived, path`.
+
+#### Contract version
+
+The shapes of all `--json` outputs and the exit codes form one contract with
+one integer version. Every `--json` document carries it as `schema_version`,
+and `ho --version --json` reports the same number as `contract`; the two are
+always equal. The contract version is increased when:
+
+- a JSON field is removed or renamed;
+- a field's type or meaning changes;
+- an exit code is changed or removed, or its meaning changes.
+
+It does **not** change for additions: a new field, command, flag, or error
+code within an existing exit code. Callers should ignore fields they do not
+know. The format version in `hub.json` is separate and is not the contract.
 
 ### Exit codes
 

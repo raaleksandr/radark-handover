@@ -32,7 +32,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+__version__ = "0.2.0"  # package version; pyproject.toml reads it (single source)
+
+# JSON contract version: every --json document carries it as `schema_version`, and
+# `ho --version --json` reports the same number as `contract`. Bump it only for breaking
+# changes to --json shapes or exit codes (see README, "Contract version").
 SCHEMA_VERSION = 1
+
+# Format version of hub.json, independent of the JSON output contract.
+HUB_FORMAT_VERSION = 1
 
 # ---------------------------------------------------------------------------
 # errors
@@ -1432,7 +1440,7 @@ def cmd_init(ctx: Ctx, args):
         with open(agents, "w", encoding="utf-8", newline="") as fh:
             fh.write(guide)
     with open(root / "hub.json", "w", encoding="utf-8", newline="") as fh:
-        fh.write(json.dumps({"schema_version": SCHEMA_VERSION, "teams": teams}, indent=2, ensure_ascii=False) + "\n")
+        fh.write(json.dumps({"schema_version": HUB_FORMAT_VERSION, "teams": teams}, indent=2, ensure_ascii=False) + "\n")
     data = {"hub": str(root), "teams": teams}
     text = f"Initialized hub at {root} with teams: {', '.join(t['id'] for t in teams) or '(none)'}"
     return data, text
@@ -1572,6 +1580,10 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--body", dest="body_stdin", metavar="-", help="'-' reads the Markdown body from stdin")
 
     parser = _Parser(prog="ho", description="Team handover hub: pass Markdown handovers between teams.")
+    parser.add_argument("--version", action="store_true",
+                        help="print the package version and JSON contract version, then exit")
+    parser.add_argument("--json", dest="version_json", action="store_true",
+                        help="with --version: print it as one JSON document")
     sub = parser.add_subparsers(dest="command", metavar="<command>", parser_class=_Parser)
 
     p = sub.add_parser("init", parents=[common], help="create a hub")
@@ -1661,6 +1673,17 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, env=None, cwd=None)
                 args = parser.parse_args(argv)
         except SystemExit as exc:  # -h / --help
             return exc.code if isinstance(exc.code, int) else EXIT_OK
+        if args.version:
+            if args.command:
+                raise HoError("usage", "--version takes no command (see 'ho -h')")
+            data = {"version": __version__, "contract": SCHEMA_VERSION}
+            if want_json:
+                ctx.stdout.write(_dump(data) + "\n")
+            else:
+                ctx.stdout.write(f"ho {__version__} (contract {SCHEMA_VERSION})\n")
+            return EXIT_OK
+        if args.version_json:
+            raise HoError("usage", "--json before the command is only valid with --version (see 'ho -h')")
         if not args.command:
             parser.print_help(ctx.stderr)
             return EXIT_USAGE

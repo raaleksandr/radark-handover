@@ -16,7 +16,7 @@ passing Markdown handovers between teams through a plain-file hub, usually a git
 - **The JSON output and exit codes are a contract.** radark-factory and AI agents parse `--json` output and rely
   on exit codes 1–4. Additive changes (a new field, command or flag) are fine; renaming or removing a field,
   changing its meaning or an exit code needs a `SCHEMA_VERSION` bump and is agreed with the radark-factory team
-  first.
+  first. The full rule is in README.md, "Contract version"; `ho --version --json` reports it as `contract`.
 - Hub files must stay merge-friendly: each action is a new file; never rewrite another team's files.
 - Every change is an OpenSpec change (`openspec/changes/<name>/`).
 - **This repository is public.** Never commit a user's paths, team or product names, hub content or personal data.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "radark-handover"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Lightweight file-based handovers between AI agent teams: a CLI for a software dark factory."
 readme = "README.md"
 license = "MIT"
@@ -26,6 +26,9 @@ ho = "ho:main"
 [tool.setuptools]
 py-modules = ["ho"]
 packages = ["ho_templates"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ho.__version__"}
 
 [tool.setuptools.package-data]
 ho_templates = ["*.md"]

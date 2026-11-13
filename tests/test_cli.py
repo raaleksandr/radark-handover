@@ -331,3 +331,56 @@ class Cli(HubTestCase):
         for cmd in ("ho return", "ho close", "ho sync", "--body-file"):
             self.assertIn(cmd, text)
         self.assertIn("`backend` - Backend", text, "team list is filled in")
+
+    # -- Requirement: Version information ---------------------------------------------
+    def test_version_text(self):
+        r = run_ho("--version", cwd=self.tmp)
+        self.assertEqual(r.code, 0, r)
+        self.assertEqual(r.out, f"ho {ho.__version__} (contract {ho.SCHEMA_VERSION})\n")
+        self.assertEqual(r.err, "")
+
+    def test_version_json_both_orders(self):
+        for argv in (("--version", "--json"), ("--json", "--version")):
+            r = run_ho(*argv, cwd=self.tmp)
+            self.assertEqual(r.code, 0, r)
+            self.assertEqual(r.err, "")
+            data = r.json
+            self.assertEqual(set(data), {"schema_version", "version", "contract"})
+            self.assertIsInstance(data["schema_version"], int)
+            self.assertIsInstance(data["contract"], int)
+            self.assertEqual(data["version"], ho.__version__)
+            self.assertEqual(data["contract"], ho.SCHEMA_VERSION)
+
+    def test_version_needs_no_hub_or_team(self):
+        before = self.snapshot()
+        expected = run_ho("--version", "--json", cwd=self.tmp).out
+        envs = (clean_env(), clean_env() | {"HO_HUB": str(self.tmp / "missing"), "HO_TEAM": "nobody"})
+        for env in envs:
+            for argv in (("--version",), ("--version", "--json")):
+                r = run_ho(*argv, cwd=self.tmp, env=env)
+                self.assertEqual(r.code, 0, r)
+            self.assertEqual(run_ho("--version", "--json", cwd=self.tmp, env=env).out, expected)
+        self.assertFalse((self.tmp / "missing").exists())
+        self.assertUnchanged(before)
+
+    def test_version_with_command_is_usage_error(self):
+        for argv in (("--version", "inbox"), ("--version", "--json", "inbox"), ("--json", "inbox")):
+            r = run_ho(*argv, cwd=self.hub)
+            self.assertEqual(r.code, 1, r)
+
+    def test_version_help_lists_flag(self):
+        r = run_ho("-h", cwd=self.tmp)
+        self.assertEqual(r.code, 0, r)
+        self.assertIn("--version", r.out)
+
+    def test_version_matches_pyproject(self):
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('dynamic = ["version"]', text)
+        self.assertIn('version = {attr = "ho.__version__"}', text)
+
+    # -- Requirement: JSON contract version -------------------------------------------
+    def test_contract_equals_schema_version(self):
+        contract = run_ho("--version", "--json", cwd=self.tmp).json["contract"]
+        self.assertEqual(self.inbox("backend")["schema_version"], contract)
+        hub_json = json.loads((self.hub / "hub.json").read_text(encoding="utf-8"))
+        self.assertEqual(hub_json["schema_version"], ho.HUB_FORMAT_VERSION)
