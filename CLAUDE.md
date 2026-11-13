@@ -2,7 +2,8 @@
 
 radark-handover is `ho`: a zero-dependency CLI (Python 3.10+, standard library only, one module `ho.py`) for
 passing Markdown handovers between teams through a plain-file hub, usually a git repository. Start with
-[README.md](README.md); the original design is in `openspec/changes/add-team-handover-hub/`.
+[README.md](README.md); the accepted specs are in `openspec/specs/` (`handover-cli`, `handover-lifecycle`,
+`handover-store`), the original design in `openspec/changes/archive/2026-11-13-add-team-handover-hub/`.
 
 ## Commands
 
