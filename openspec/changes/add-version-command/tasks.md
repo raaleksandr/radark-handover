@@ -18,7 +18,7 @@ Handover: HO-20261113-cbcj. Assumptions (shape accepted as proposed, `contract` 
 
 - [x] 3.1 Run `python -m unittest discover -s tests` and `openspec validate add-version-command --strict` (verify: all tests pass, record the count; validation passes; failing or flaky tests are handled and reported per hub `AGENTS.md` §10).
 - [x] 3.2 Review the diff for private data, then commit locally — no push, tag, release or reinstall (verify: `git log -1 --stat`; `git status` clean).
-- [ ] 3.3 Report with `ho done HO-20261113-cbcj -m "..."` listing the change name `add-version-command`, the commit hash(es), the test count, the exact outputs of `ho --version` and `ho --version --json` (from `python ho.py`, since reinstalling is the owner's step), the decision that `contract` always equals `schema_version`, and a note that the installed `ho` needs a reinstall to get the flag (verify: `ho show HO-20261113-cbcj --json` shows `my_state` `done`).
+- [x] 3.3 Report with `ho done HO-20261113-cbcj -m "..."` listing the change name `add-version-command`, the commit hash(es), the test count, the exact outputs of `ho --version` and `ho --version --json` (from `python ho.py`, since reinstalling is the owner's step), the decision that `contract` always equals `schema_version`, and a note that the installed `ho` needs a reinstall to get the flag (verify: `ho show HO-20261113-cbcj --json` shows `my_state` `done`).
 
 ## Workflow follow-up
 
