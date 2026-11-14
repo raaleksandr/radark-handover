@@ -345,7 +345,11 @@ class Cli(HubTestCase):
             self.assertEqual(r.code, 0, r)
             self.assertEqual(r.err, "")
             data = r.json
-            self.assertEqual(set(data), {"schema_version", "version", "contract"})
+            self.assertEqual(set(data), {"schema_version", "version", "contract", "features"})
+            self.assertIsInstance(data["features"], list)
+            self.assertTrue(all(isinstance(f, str) for f in data["features"]))
+            self.assertIn("hub-lock", data["features"])
+            self.assertEqual(data["contract"], 1)
             self.assertIsInstance(data["schema_version"], int)
             self.assertIsInstance(data["contract"], int)
             self.assertEqual(data["version"], ho.__version__)

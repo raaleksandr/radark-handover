@@ -12,7 +12,8 @@ class Store(HubTestCase):
     # -- Requirement: Hub layout --------------------------------------------------
     def test_freshly_initialized_hub(self):
         entries = sorted(p.name for p in self.hub.iterdir())
-        self.assertEqual(entries, ["AGENTS.md", "active", "archive", "hub.json"])
+        self.assertEqual(entries, [".gitignore", "AGENTS.md", "active", "archive", "hub.json"])
+        self.assertIn(".ho.lock", (self.hub / ".gitignore").read_text(encoding="utf-8").splitlines())
         self.assertEqual(list((self.hub / "active").iterdir()), [])
         self.assertEqual(list((self.hub / "archive").iterdir()), [])
         config = json.loads((self.hub / "hub.json").read_text(encoding="utf-8"))

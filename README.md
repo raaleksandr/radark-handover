@@ -224,13 +224,47 @@ ho 0.2.0 (contract 1)
 {
   "schema_version": 1,
   "version": "0.2.0",
-  "contract": 1
+  "contract": 1,
+  "features": [
+    "hub-lock"
+  ]
 }
 ```
 
 Tools that drive `ho` can run it once at start-up: a missing `ho`, or an older
 one without `--version` (exit 1, no JSON), or an unexpected `contract` means
 stop with one clear message.
+
+`features` names optional capabilities of this `ho` (additive; unknown entries
+should be ignored). `"hub-lock"` means writing commands and `sync` serialise
+through the hub lock (below); a tool that runs several `ho` processes on one hub
+at the same time should require it (a missing `features` field means an older
+`ho` without the lock).
+
+### Hub lock
+
+Several `ho` processes may work on the same hub at once (for example parallel
+agent sessions). Every command that writes to the hub — `new`, `ack`, `done`,
+`respond`, `decline`, `comment`, `seen`, `return`, `close` — and `sync` hold an
+exclusive lock on `<hub>/.ho.lock` for their whole run, so they run one after
+the other. Read commands (`teams`, `inbox`, `list`, `show`, `validate`) and
+`--version` never take or wait for it; `init` does not lock.
+
+- **Wait bound.** A command that finds the lock taken waits (one note on
+  stderr; stdout stays a single JSON document) for up to 300 seconds, set with
+  the environment variable `HO_LOCK_TIMEOUT` (seconds, `0` = do not wait). Past
+  the bound it fails with error code `hub_locked`, exit code `1`, and the hub
+  unchanged; run the command again later. An invalid `HO_LOCK_TIMEOUT` is a
+  `usage` error.
+- **No stuck lock.** The lock is an operating-system lock on an open file
+  handle (`msvcrt.locking` on Windows, `fcntl.flock` elsewhere), released when
+  the process ends, even on a crash or kill. The file's existence means
+  nothing; never delete it. Keep the hub working copy on a local disk:
+  network file systems may not honour these locks. Different clones are
+  different hubs and do not lock each other — git merges them.
+- **Not versioned.** `ho init` writes a `.gitignore` with `.ho.lock`; on older
+  hubs the first successful writing command (or `sync`) appends the line, and
+  `sync` never stages `.ho.lock` in any case.
 
 ### Inbox
 
@@ -281,7 +315,7 @@ know. The format version in `hub.json` is separate and is not the contract.
 | code | meaning | example error codes |
 |---|---|---|
 | 0 | success | |
-| 1 | usage or input error | `usage`, `team_required`, `body_required`, `empty_body`, `ambiguous_id`, `hub_exists`, `not_a_git_repo`, `git_error` |
+| 1 | usage or input error | `usage`, `team_required`, `body_required`, `empty_body`, `ambiguous_id`, `hub_exists`, `not_a_git_repo`, `git_error`, `hub_locked` (hub lock not free within `HO_LOCK_TIMEOUT`) |
 | 2 | hub, team or handover not found | `hub_not_found`, `unknown_team`, `handover_not_found` |
 | 3 | not allowed by the lifecycle | `invalid_transition`, `not_recipient`, `not_sender`, `not_participant`, `archived` |
 | 4 | hub integrity problem | `integrity_error`, `invalid_hub`, `duplicate_id`, `io_error`; `validate` with problems |
@@ -294,6 +328,8 @@ A failed command never changes the hub.
 handover-hub/
   hub.json                      # {"schema_version": 1, "teams": [{"id": "backend", "name": "Backend"}, ...]}
   AGENTS.md                     # guide for AI agents
+  .gitignore                    # lists .ho.lock
+  .ho.lock                      # hub lock file (created on demand, never versioned, carries no data)
   active/
     HO-20261010-bizg/
       handover.md               # the original document, never modified

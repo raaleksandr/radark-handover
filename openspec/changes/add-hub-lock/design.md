@@ -84,3 +84,17 @@ only; Python 3.10+; Windows and POSIX.
 Additive. Existing hubs get `.gitignore` on the first writing command. Older engines ignore `features`; newer
 engines require `"hub-lock"` only when `parallel_sessions > 1`. Rollback: reinstall the previous `ho`; the leftover
 `.ho.lock` and `.gitignore` line are harmless.
+
+## Implementation Notes (apply phase)
+
+- Commands opt in with `set_defaults(locked=True)`; `main()` runs them through `_run_locked`, which locates the hub
+  (a missing hub fails without locking), takes `hub_lock`, and runs the command, which reads the hub again under
+  the lock. `HO_LOCK_TIMEOUT` is parsed before `.ho.lock` is opened.
+- *Assumption:* `ensure_gitignore` runs **after** a writing command succeeded (still under the lock), not before
+  its work, so a failed command leaves the hub unchanged (handover-cli "Failed commands SHALL leave the hub
+  unchanged"). `sync` calls it itself, after the "is a git working tree" check and before staging. `.ho.lock`
+  itself may be created by a failing command; it carries no data, and the tests' hub snapshot ignores it.
+- *Assumption:* the exclude pathspec is `:(exclude,glob).ho.loc[k]` rather than `:(exclude).ho.lock`: a literal
+  pathspec that names an ignored file makes `git add` fail ("paths are ignored by one of your .gitignore files").
+  The glob form matches only the hub-root `.ho.lock`.
+- `HO_LOCK_TIMEOUT` also rejects `nan` and `inf`; empty means the default.

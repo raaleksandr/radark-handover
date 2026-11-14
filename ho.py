@@ -30,6 +30,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 __version__ = "0.2.0"  # package version; pyproject.toml reads it (single source)
@@ -41,6 +42,9 @@ SCHEMA_VERSION = 1
 
 # Format version of hub.json, independent of the JSON output contract.
 HUB_FORMAT_VERSION = 1
+
+# Optional capabilities announced in `ho --version --json` as `features` (additive, see README).
+FEATURES = ("hub-lock",)
 
 # ---------------------------------------------------------------------------
 # errors
@@ -1167,6 +1171,12 @@ _SYNC_EVENT_RE = re.compile(
 _SYNC_DOC_RE = re.compile(r"^(?:active|archive/\d{4})/(HO-\d{8}-[a-z2-7]{4})/handover\.md$")
 
 
+# Everything in the hub except its root lock file, even if the hub's .gitignore lost its line.
+# The bracket keeps the exclude a pattern: a literal pathspec naming an ignored file makes
+# 'git add' fail ("paths are ignored by one of your .gitignore files").
+_SYNC_PATHSPEC = (".", ":(exclude,glob).ho.loc[k]")
+
+
 def _git(root: Path, env, *args, check: bool = True):
     try:
         proc = subprocess.run(
@@ -1214,6 +1224,7 @@ def sync_hub(hub: Hub, env) -> dict:
             f"The hub at {root} is not inside a git working tree, so it cannot be synced. "
             f"Run 'git init' there and add a shared remote (or share the folder another way).",
         )
+    ensure_gitignore(root)
     has_upstream = _git(root, env, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", check=False).returncode == 0
     remotes = _git(root, env, "remote").stdout.split()
     notes = []
@@ -1221,8 +1232,8 @@ def sync_hub(hub: Hub, env) -> dict:
     if has_upstream:
         _git(root, env, "pull", "--rebase", "--autostash")
         pulled = True
-    _git(root, env, "add", "-A", "--", ".")
-    name_status = _git(root, env, "diff", "--cached", "--name-status", "--relative", "-M", "--", ".").stdout
+    _git(root, env, "add", "-A", "--", *_SYNC_PATHSPEC)
+    name_status = _git(root, env, "diff", "--cached", "--name-status", "--relative", "-M", "--", *_SYNC_PATHSPEC).stdout
     committed = False
     message, details = None, []
     if name_status.strip():
@@ -1230,7 +1241,7 @@ def sync_hub(hub: Hub, env) -> dict:
         args = ["commit", "-m", message]
         if len(details) > 1:
             args += ["-m", "\n".join(f"- {d}" for d in details)]
-        _git(root, env, *args, "--", ".")
+        _git(root, env, *args, "--", *_SYNC_PATHSPEC)
         committed = True
     if has_upstream:
         if _git(root, env, "push", check=False).returncode != 0:
@@ -1246,6 +1257,106 @@ def sync_hub(hub: Hub, env) -> dict:
         "pulled": pulled, "committed": committed, "pushed": pushed,
         "commit_message": message, "actions": details, "notes": notes,
     }
+
+
+# ---------------------------------------------------------------------------
+# hub lock
+# ---------------------------------------------------------------------------
+
+LOCK_NAME = ".ho.lock"
+GITIGNORE_NAME = ".gitignore"
+LOCK_TIMEOUT_DEFAULT = 300.0
+LOCK_POLL_SECONDS = 0.1
+
+
+def lock_timeout(env) -> float:
+    """The wait bound in seconds from HO_LOCK_TIMEOUT (default 300; 0 = do not wait)."""
+    raw = (env.get("HO_LOCK_TIMEOUT") or "").strip()
+    if not raw:
+        return LOCK_TIMEOUT_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not value >= 0 or value == float("inf"):  # also rejects nan
+        raise HoError("usage", f"HO_LOCK_TIMEOUT must be a non-negative number of seconds, got '{raw}'.")
+    return value
+
+
+def _try_lock(fd: int) -> bool:
+    if os.name == "nt":
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+    import fcntl
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock(fd: int) -> None:
+    if os.name == "nt":
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def hub_lock(root: Path, env, stderr):
+    """Hold the exclusive hub lock on <root>/.ho.lock, waiting up to HO_LOCK_TIMEOUT seconds.
+
+    The lock is an OS lock on an open handle (msvcrt on Windows, flock elsewhere), so the kernel
+    releases it when the process ends, even on a crash. The file itself carries no meaning and is
+    never deleted (a waiter may already have it open).
+    """
+    timeout = lock_timeout(env)
+    path = root / LOCK_NAME
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        deadline = time.monotonic() + timeout
+        noted = False
+        while not _try_lock(fd):
+            if time.monotonic() >= deadline:
+                raise HoError(
+                    "hub_locked",
+                    f"The hub is locked by another ho process ({path}) and was not released within "
+                    f"{timeout:g} s (HO_LOCK_TIMEOUT). Nothing was changed; run the command again later. "
+                    f"Do not delete {LOCK_NAME}: the lock is released when that process ends.",
+                )
+            if not noted:
+                stderr.write(f"ho: hub is locked by another ho process; waiting up to {timeout:g} s...\n")
+                with contextlib.suppress(Exception):
+                    stderr.flush()
+                noted = True
+            time.sleep(min(LOCK_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+        try:
+            yield path
+        finally:
+            with contextlib.suppress(OSError):
+                _unlock(fd)
+    finally:
+        os.close(fd)
+
+
+def ensure_gitignore(root: Path) -> bool:
+    """Append .ho.lock to <root>/.gitignore unless a line already equals it; True if written."""
+    path = root / GITIGNORE_NAME
+    text = read_text(path) if path.is_file() else ""
+    if any(line.strip() == LOCK_NAME for line in text.splitlines()):
+        return False
+    if text and not text.endswith("\n"):
+        text += "\n"
+    write_text_atomic(path, text + LOCK_NAME + "\n")
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1435,6 +1546,7 @@ def cmd_init(ctx: Ctx, args):
     root.mkdir(parents=True, exist_ok=True)
     (root / "active").mkdir(exist_ok=True)
     (root / "archive").mkdir(exist_ok=True)
+    ensure_gitignore(root)
     agents = root / "AGENTS.md"
     if not agents.exists():
         with open(agents, "w", encoding="utf-8", newline="") as fh:
@@ -1604,7 +1716,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ref", action="append", help="related handover ID (repeatable)")
     p.add_argument("--attach", action="append", help="file to copy into attachments/ (repeatable)")
     p.add_argument("--auto-close", action="store_true", help="close automatically once all recipients are satisfied")
-    p.set_defaults(func=cmd_new)
+    p.set_defaults(func=cmd_new, locked=True)
 
     p = sub.add_parser("inbox", parents=[common], help="what needs the acting team's attention")
     p.set_defaults(func=cmd_inbox)
@@ -1632,24 +1744,40 @@ def build_parser() -> argparse.ArgumentParser:
     for name, text in helps.items():
         p = sub.add_parser(name, parents=[common] if name == "seen" else [common, body], help=text)
         p.add_argument("id")
-        p.set_defaults(func=cmd_action)
+        p.set_defaults(func=cmd_action, locked=True)
 
     p = sub.add_parser("return", parents=[common, body], help="sender: send a recipient's part back")
     p.add_argument("id")
     p.add_argument("--to", required=True, help="recipient team whose part is returned")
-    p.set_defaults(func=cmd_return)
+    p.set_defaults(func=cmd_return, locked=True)
 
     p = sub.add_parser("close", parents=[common, body], help="sender: close and archive")
     p.add_argument("id")
     p.add_argument("--force", action="store_true", help="close an open handover (requires a reason)")
-    p.set_defaults(func=cmd_close)
+    p.set_defaults(func=cmd_close, locked=True)
 
     p = sub.add_parser("validate", parents=[common], help="check hub integrity")
     p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser("sync", parents=[common], help="git pull --rebase, commit hub changes, push")
-    p.set_defaults(func=cmd_sync)
+    p.set_defaults(func=cmd_sync, locked=True)
     return parser
+
+
+def _run_locked(ctx: Ctx, args):
+    """Run a writing command or sync under the hub lock (see the hub-lock spec).
+
+    The hub is located first (a missing hub fails without locking); the command itself then reads
+    the hub again, after the previous writer has finished. The .gitignore line is added only after
+    the command succeeded, so a failed command leaves the hub unchanged (sync adds it itself,
+    before staging).
+    """
+    root = find_hub(ctx, args).root
+    with hub_lock(root, ctx.env, ctx.stderr):
+        result = args.func(ctx, args)
+        if args.func is not cmd_sync:
+            ensure_gitignore(root)
+    return result
 
 
 def _dump(data: dict) -> str:
@@ -1676,7 +1804,7 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, env=None, cwd=None)
         if args.version:
             if args.command:
                 raise HoError("usage", "--version takes no command (see 'ho -h')")
-            data = {"version": __version__, "contract": SCHEMA_VERSION}
+            data = {"version": __version__, "contract": SCHEMA_VERSION, "features": list(FEATURES)}
             if want_json:
                 ctx.stdout.write(_dump(data) + "\n")
             else:
@@ -1687,7 +1815,10 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, env=None, cwd=None)
         if not args.command:
             parser.print_help(ctx.stderr)
             return EXIT_USAGE
-        result = args.func(ctx, args)
+        if getattr(args, "locked", False):
+            result = _run_locked(ctx, args)
+        else:
+            result = args.func(ctx, args)
         data, text = result[0], result[1]
         code = result[2] if len(result) > 2 else EXIT_OK
         if want_json:

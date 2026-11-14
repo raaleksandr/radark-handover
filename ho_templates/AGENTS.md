@@ -100,3 +100,9 @@ With `--json`, failures print `{"error": {"code": ..., "message": ...}}`.
 Exit codes: `1` bad input, `2` not found, `3` action not allowed in the current
 state (read `message` - it lists the allowed actions), `4` hub integrity problem
 (run `ho validate`).
+
+Other `ho` processes may use this hub at the same time. A writing command or
+`ho sync` then waits for them (a note on stderr) for up to `HO_LOCK_TIMEOUT`
+seconds (default 300). Error code `hub_locked` (exit `1`) means the wait ran
+out and nothing was changed: run the command again later. Never delete
+`.ho.lock`; the lock is released when the other process ends.

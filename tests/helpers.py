@@ -86,11 +86,15 @@ class HubTestCase(unittest.TestCase):
         return [i["id"] for i in items]
 
     def snapshot(self):
-        """Map of every file under the hub to its bytes (to prove failures change nothing)."""
+        """Map of every file under the hub to its bytes (to prove failures change nothing).
+
+        The hub lock file .ho.lock is left out: it carries no data, and a writing command creates it
+        before it knows whether it will succeed (hub-lock spec).
+        """
         return {
             p.relative_to(self.hub).as_posix(): p.read_bytes()
             for p in sorted(self.hub.rglob("*"))
-            if p.is_file()
+            if p.is_file() and p.relative_to(self.hub).as_posix() != ho.LOCK_NAME
         } | {
             p.relative_to(self.hub).as_posix() + "/": b""
             for p in sorted(self.hub.rglob("*"))
