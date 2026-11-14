@@ -95,11 +95,15 @@ Every command SHALL accept `--json`. With `--json` the command SHALL write exact
 - **THEN** stdout is a JSON object whose `id` field is the new handover's ID
 
 ### Requirement: Errors and exit codes
-The CLI SHALL exit with `0` on success, `1` for usage or input errors, `2` when a handover, team or hub is not found, `3` for an action not allowed by the lifecycle, and `4` for hub integrity errors. Error messages SHALL go to stderr; with `--json`, stdout SHALL contain a JSON object `{"error": {"code": <name>, "message": <text>}}`. Failed commands SHALL leave the hub unchanged.
+The CLI SHALL exit with `0` on success, `1` for usage or input errors, `2` when a handover, team or hub is not found, `3` for an action not allowed by the lifecycle, and `4` for hub integrity errors. A writing command or `sync` that could not get the hub lock within its wait bound SHALL exit with `1` and error code `hub_locked`. Error messages SHALL go to stderr; with `--json`, stdout SHALL contain a JSON object `{"error": {"code": <name>, "message": <text>}}`. Failed commands SHALL leave the hub unchanged.
 
 #### Scenario: Invalid transition exit code
 - **WHEN** backend runs `ho done` on a `response` handover with `--json`
 - **THEN** the exit code is `3` and stdout is a JSON object with an `error` whose code is `invalid_transition`
+
+#### Scenario: Hub lock timeout exit code
+- **WHEN** `ho sync --json` cannot get the hub lock within `HO_LOCK_TIMEOUT`
+- **THEN** the exit code is `1` and stdout is a JSON object with an `error` whose code is `hub_locked`
 
 ### Requirement: Git sync
 `sync` SHALL, when the hub is inside a git working tree, pull remote changes (rebasing local commits and stashing uncommitted changes), commit any hub changes with a generated message summarizing the actions, and push. If the hub is not in a git repository, `sync` SHALL fail with an explanatory error. Other commands SHALL NOT perform git operations.
@@ -116,7 +120,7 @@ The CLI SHALL exit with `0` on success, `1` for usage or input errors, `2` when 
 - **THEN** it contains the exact command for fetching the team's inbox as JSON and the mapping `ack`→`ack`, `done`→`done`, `response`→`respond`
 
 ### Requirement: Version information
-`ho --version` SHALL print one line `ho <version> (contract <n>)` and exit `0`, where `<version>` is the installed radark-handover package version and `<n>` the JSON contract version. With `--json` it SHALL instead print one JSON object `{"schema_version", "version", "contract"}`: `version` a string, `contract` an integer. It SHALL need no hub and no team and SHALL read or write no hub files.
+`ho --version` SHALL print one line `ho <version> (contract <n>)` and exit `0`, where `<version>` is the installed radark-handover package version and `<n>` the JSON contract version. With `--json` it SHALL instead print one JSON object `{"schema_version", "version", "contract", "features"}`: `version` a string, `contract` an integer, `features` a list of strings naming optional capabilities of this `ho`. `features` SHALL contain `"hub-lock"` when writing commands and `sync` serialise through the hub lock. It SHALL need no hub and no team and SHALL read or write no hub files.
 
 #### Scenario: Human-readable version
 - **WHEN** `ho --version` is run with package version `0.2.0` and contract `1`
@@ -124,7 +128,11 @@ The CLI SHALL exit with `0` on success, `1` for usage or input errors, `2` when 
 
 #### Scenario: Machine-readable version
 - **WHEN** `ho --version --json` is run
-- **THEN** stdout parses as a single JSON object with `schema_version` (integer), `version` (string equal to the package version) and `contract` (integer), and the exit code is `0`
+- **THEN** stdout parses as a single JSON object with `schema_version` (integer), `version` (string equal to the package version), `contract` (integer) and `features` (list of strings), and the exit code is `0`
+
+#### Scenario: Hub lock is announced
+- **WHEN** `ho --version --json` is run
+- **THEN** its `features` list contains `"hub-lock"` and `contract` is still `1`
 
 #### Scenario: No hub and no team needed
 - **WHEN** `ho --version --json` is run outside any hub with neither `HO_HUB` nor `HO_TEAM` set, or with `HO_HUB` pointing to a directory that does not exist
