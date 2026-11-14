@@ -32,5 +32,5 @@ See design.md, Decisions 3–6.
 ## 5. Verification and report
 
 - [x] 5.1 Run `python -m unittest discover -s tests`; all pass (record test counts). Run `openspec validate add-hub-lock`. Verify: both succeed.
-- [ ] 5.2 Commit the implementation locally (no push, tag, release or reinstall). Verify: `git log` shows the commit(s).
-- [ ] 5.3 Report with `ho done HO-20261114-23cx -m "..."` naming: change `add-hub-lock`, commit hash(es), test counts, lock file `<hub>/.ho.lock`, wait bound (300 s, `HO_LOCK_TIMEOUT`), timeout error `hub_locked` / exit code `1`, and the exact `ho --version --json` output from this tree (`python ho.py --version --json`; the installed `ho` is updated by the owner). Then `ho sync`. Verify: `ho show HO-20261114-23cx --json` shows our state `done`.
+- [x] 5.2 Commit the implementation locally (no push, tag, release or reinstall). Verify: `git log` shows the commit(s).
+- [x] 5.3 Report with `ho done HO-20261114-23cx -m "..."` naming: change `add-hub-lock`, commit hash(es), test counts, lock file `<hub>/.ho.lock`, wait bound (300 s, `HO_LOCK_TIMEOUT`), timeout error `hub_locked` / exit code `1`, and the exact `ho --version --json` output from this tree (`python ho.py --version --json`; the installed `ho` is updated by the owner). Then `ho sync`. Verify: `ho show HO-20261114-23cx --json` shows our state `done`.
